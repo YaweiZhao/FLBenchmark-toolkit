@@ -1,15 +1,15 @@
 {
     "framework": "crypten",
-    "dataset": "breast_vertical",
+    "dataset": "breast_horizontal",
     "algorithm": "mpc",
-    "model": "mlp_128",
+    "model": "logistic_regression",
     "bench_param": {
         "mode": "local",
         "device": "cpu"
     },
     "training_param": {
-        "epochs": 8,
-        "batch_size": 100,
+        "epochs": 3,
+        "batch_size": 3,
         "learning_rate": 0.1,
         "loss_func": "cross_entropy",
         "optimizer": "sgd",

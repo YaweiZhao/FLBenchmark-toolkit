@@ -269,10 +269,9 @@ def start(config_file):
 
 def prepare_dataset(dataset_name):
     print('Preparing dataset {}'.format(dataset_name))
-    FATE_DATASETS = ['breast_horizontal', 'default_credit_horizontal', 'give_credit_horizontal', 'student_horizontal', 'vehicle_scale_horizontal',
+    FATE_DATASETS = ['breast-cancer', 'breast_horizontal', 'default_credit_horizontal', 'give_credit_horizontal', 'student_horizontal', 'vehicle_scale_horizontal',
                      'motor_vertical', 'breast_vertical', 'default_credit_vertical', 'dvisits_vertical', 'give_credit_vertical', 'student_vertical', 'vehicle_scale_vertical']
     LEAF_DATASETS = ['celeba', 'femnist', 'reddit', 'sent140', 'shakespeare', 'synthetic']
-
     raw_data_dir = '~/flbenchmark.working/data'
     flbd = flbenchmark.datasets.FLBDatasets(raw_data_dir)
 
@@ -346,3 +345,12 @@ if __name__ == '__main__':
     else:
         config_file = './config.json'
     start(config_file)
+
+
+
+
+
+
+
+
+
