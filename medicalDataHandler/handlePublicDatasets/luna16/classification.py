@@ -13,10 +13,102 @@ from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 class Luna16(object):
-    def __init__(self):
-        pass
-
+    """
+    |--CSVFILES
+    |	|--annotations.csv
+    |	|--annotations_excluded.csv
+    |	|--candidates.csv
+    | 	|--sampleSubmission.csv
+    |	|--seriesuids.csv
+    |--seg-lungs-LUNA16
+    |--subset0~9 包含10个子集，每个大约有90个CT扫描，总共888个
+    |	|--xxx.mhd：
+    |	|--xxx.raw：
+    """
+    def __init__(self, givenDir = '/home/yawei/MedicalDatasets'):
+        self.__dir = givenDir
+        self.__uIds = self.__initSeriesUid(givenFilePathOfUid=self.__dir+'/CSVFILES/seriesuids.csv')
+        self.__candidateNodules = self.__initCandidateNodules(givenFilePathOfCandidateNodules=self.__dir+'/CSVFILES/candidates.csv')
+        self.__annotations = self.__initAnnotation(givenFilePathOfAnnotation=self.__dir+'/CSVFILES/annotations.csv')
     
+    def __readCsv(self, givenCsvFilePath, hasHeader = False):
+        resultList = []
+        with open(givenCsvFilePath) as f:
+            reader = csv.reader(f) 
+            if hasHeader == True:
+                headerList = [column.strip() for column in str(next(reader)).split(' ')]
+            for row in reader: # read file line by line.
+                resultList.append(row)
+        return resultList
+
+    def __initSeriesUid(self, givenFilePathOfUid):
+        seriesUidList = self.__readCsv(givenCsvFilePath=givenFilePathOfUid) # load every patient's ID.
+        return seriesUidList
+
+    def __initCandidateNodules(self, givenFilePathOfCandidateNodules):
+        # all candidates like nodules, including macilous/benign or not. totally 551065 candidates.
+        # when 'class' is 0, it is not a nodule. 
+        # when 'class' is 1, it is a macilous/benign nodule. totally 1351 nodules.
+        """
+        seriesuid,coordX,coordY,coordZ,class
+        1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860,-56.08,-67.85,-311.92,0
+        1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860,53.21,-244.41,-245.17,0
+        1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860,103.66,-121.8,-286.62,0
+        1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860,-33.66,-72.75,-308.41,0
+        1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860,-32.25,-85.36,-362.51,0
+        1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860,-26.65,-203.07,-165.07,0
+        1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860,-74.99,-114.79,-311.92,0
+        1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860,-16.14,-248.61,-239.55,0
+        1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860,135.89,-141.41,-252.2,0
+        """
+        candidateNoduleList = self.__readCsv(givenCsvFilePath=givenFilePathOfCandidateNodules, hasHeader=True)
+        return candidateNoduleList
+    
+    def __initAnnotation(self, givenFilePathOfAnnotation):
+        # some nodules. totally 1187. The coordinates here may not be exactly same to those in the file 'candidates.csv'.    
+        """
+        seriesuid,coordX,coordY,coordZ,diameter_mm
+        1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860,-128.6994211,-175.3192718,-298.3875064,5.651470635
+        1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860,103.7836509,-211.9251487,-227.12125,4.224708481
+        1.3.6.1.4.1.14519.5.2.1.6279.6001.100398138793540579077826395208,69.63901724,-140.9445859,876.3744957,5.786347814
+        1.3.6.1.4.1.14519.5.2.1.6279.6001.100621383016233746780170740405,-24.0138242,192.1024053,-391.0812764,8.143261683
+        1.3.6.1.4.1.14519.5.2.1.6279.6001.100621383016233746780170740405,2.441546798,172.4648812,-405.4937318,18.54514997
+        1.3.6.1.4.1.14519.5.2.1.6279.6001.100621383016233746780170740405,90.93171321,149.0272657,-426.5447146,18.20857028
+        1.3.6.1.4.1.14519.5.2.1.6279.6001.100621383016233746780170740405,89.54076865,196.4051593,-515.0733216,16.38127631
+        1.3.6.1.4.1.14519.5.2.1.6279.6001.100953483028192176989979435275,81.50964574,54.9572186,-150.3464233,10.36232088
+        1.3.6.1.4.1.14519.5.2.1.6279.6001.102681962408431413578140925249,105.0557924,19.82526014,-91.24725078,21.08961863
+        """
+        annotationList = self.__readCsv(givenCsvFilePath=givenFilePathOfAnnotation, hasHeader=True)
+        return annotationList
+
+    def getSeriesIds(self):
+        return self.__uIds
+
+    def getCandidateNodules(self):
+        return self.__candidateNodules
+
+    def getAnnotations(self):
+        return self.__annotations
+    
+    def extractCtScan(self, givenSeriesId):
+        ctScan = CtScan(givenFilePath=self.__dir+'/rawData/'+givenSeriesId+'.mhd')
+        return ctScan
+
+    def extractSliceOfCtScan(self, givenCtScan, givenSliceId):
+        assert(isinstance(givenCtScan, CtScan))
+        sliceOfCtScan = Slice(givenCtScan=givenCtScan, givenSliceId=givenSliceId)
+        return sliceOfCtScan
+
+    def extractCandidateOfNodule(self, givenCtScan, givenWorldCoord):
+        assert(isinstance(givenCtScan, CtScan))
+        assert(isinstance(givenWorldCoord, WorldCoord))
+        candidateOfNodule = Nodule(givenCtScan=givenCtScan, givenWorldCoordOfNodule=givenWorldCoord)
+        return candidateOfNodule
+
+    def saveCandidateOfNodule(self, givenTargetPath, givenNoduleList):
+        for nodule in givenNoduleList:
+            assert(isinstance(nodule, Nodule))
+            nodule.saveNodule(givenTargetPath=givenTargetPath, givenType='nii')
     pass
 
 class WorldCoord(object):
@@ -95,6 +187,10 @@ class Nodule(object):
 
     def getWorldCoord(self):
         return self.__settingObj.getWorldCoord()
+    
+    def saveNodule(self, givenTargetPath, givenType = 'nii'):
+        xxx
+        pass
     pass
 
 class Slice(object):
@@ -153,7 +249,7 @@ class Slice(object):
         binary = self.__closureForNoduleAttachedLungWall(givenBinaryImg=binary) # Step 6: Closure operation with a disk of radius 10. This operation is to keep nodules attached to the lung wall.
         return binary
 
-    def plotBoxOfNodule(self, givenNodule):
+    def highlightNoduleByBox(self, givenNodule):
         assert(isinstance(givenNodule, Nodule))
         # 注意 y代表纵轴，x代表横轴
         x,y,z = givenNodule.getVoxelCoord().get()
@@ -200,7 +296,7 @@ class CtScan(object):
         dataOfSlice = np.squeeze(self.__numpyImage[givenSliceId])
         return dataOfSlice
     
-    def show3d(self, threshold=-400):
+    def show3dUndone(self, threshold=-400):
         # Position the scan upright, 
         # so the head of the patient would be at the top facing the camera
         p = self.__numpyImage.transpose(2,1,0)
@@ -224,55 +320,20 @@ class CtScan(object):
         return self.__numpyImage
     pass
 
-class NoduleCollections(object):
-    def __init__(self, givenPath, givenPatchSizeOfNodule = (48, 48, 48)):
-        self.__pathOfConfig = givenPath # path of luna16 dataset
-        self.__patchSizeOfNodule = givenPatchSizeOfNodule
-        pass
-    
-    def __loadConfigOfAllNodules(self):
-        with open(self.__pathOfConfig) as f:
-            reader = csv.reader(f) # read config file line by line, and load the location of every nodule. 
-            headers = next(reader)
-            for row in reader:
-                pass
-        return 
-
-    def __extractAllNodules(self):
-        params = self.__loadConfigOfAllNodules()
-        #noduleList = xxx
-        #return noduleList
-
-    def writeAllNodules(self, givenTargetType="jpeg"):
-        """
-        generate all nodules, more than 0.5 millon nodules.
-        """
-        nodeList = self.__extractAllNodules()
-        
-        pass
-
-    def writeSubsetOfNodules(self, givenTargetType="jpeg", givenNumberOfNodules = 200):
-        """
-        generate toy datasets.
-        """
-        nodeList = self.__extractAllNodules()
-        resultNodeList = nodeList[:givenNumberOfNodules,:,:]
-        return resultNodeList
-
-    
-    pass
-
 
 class Test(object):
     def __init__(self):
         pass
     
     def execute(self):
+        luna16 = Luna16(givenFilePathOfUid='/home/yawei/MedicalDatasets/CSVFILES/seriesuids.csv', 
+        givenFilePathOfCandidateNodules='/home/yawei/MedicalDatasets/CSVFILES/candidates.csv',
+        givenFilePathOfAnnotations='/home/yawei/MedicalDatasets/CSVFILES/annotations.csv')
         cts = CtScan(givenFilePath="/home/yawei/my-flbenchmark/toyData/mhd/1.3.6.1.4.1.14519.5.2.1.6279.6001.102681962408431413578140925249.mhd")
         worldCorrdOfNodule = WorldCoord(givenX=105.0558,givenY=19.82526, givenZ=-91.2478)
         nodule = Nodule(givenCtScan=cts,givenWorldCoordOfNodule=worldCorrdOfNodule) 
         x, y, z = VoxelCoord(givenWorldCoord=worldCorrdOfNodule,givenOriginCoord=cts.getSetting().getOriginCoord(),givenSpacing=cts.getSetting().getSpacing()).get()
-        Slice(givenCtScan=cts, givenSliceId=z).plotBoxOfNodule(givenNodule=nodule)
+        Slice(givenCtScan=cts, givenSliceId=z).highlightNoduleByBox(givenNodule=nodule)
         pass
     pass
 
