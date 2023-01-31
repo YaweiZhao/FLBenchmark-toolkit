@@ -1,6 +1,8 @@
+import os
 import csv
 import numpy as np
 import time
+import json
 import nibabel as nib
 import SimpleITK as sitk
 import matplotlib.pyplot as plt
@@ -12,6 +14,47 @@ from scipy import ndimage as ndi
 from skimage import measure
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+class NpyFile(object):
+    def __init__(self, givenFilePath):
+        self.__filePath = givenFilePath
+
+    def write(self, givenNumpyArray):
+        np.save(file=self.__filePath, arr = givenNumpyArray)
+
+    def read(self):
+        npy = np.load(file = self.__filePath)
+        return npy
+    pass
+
+class TxtFile(object):
+    def __init__(self, givenTargetFilePath):
+        self.__targetFilePath = givenTargetFilePath
+    
+    def write(self, givenDataObject):
+        if isinstance(givenDataObject, dict):
+            with open(self.__targetFilePath, 'w', encoding='utf-8') as f:
+                    f.write(json.dumps(givenDataObject, ensure_ascii=False)) # 将dic dumps json 格式进行写入
+    pass
+
+class CsvFile(object):
+    def __init__(self, givenFilePath, hasHeader = False):
+        self.__filePath = givenFilePath
+        self.__recordList = self.read(hasHeader=hasHeader)
+    
+    def read(self, hasHeader = False):
+        resultList = []
+        with open(self.__filePath) as f:
+            reader = csv.reader(f) 
+            if hasHeader == True:
+                headerList = [column.strip() for column in str(next(reader)).split(' ')]
+            for row in reader: # read file line by line.
+                resultList.append(row)
+        return resultList
+
+    def getRecords(self):
+        return self.__recordList
+    pass
 
 class Luna16(object):
     """
@@ -31,19 +74,9 @@ class Luna16(object):
         self.__uIds = self.__initSeriesUid(givenFilePathOfUid=self.__dir+'/CSVFILES/seriesuids.csv')
         self.__candidateNodules = self.__initCandidateNodules(givenFilePathOfCandidateNodules=self.__dir+'/CSVFILES/candidates.csv')
         self.__annotations = self.__initAnnotation(givenFilePathOfAnnotation=self.__dir+'/CSVFILES/annotations.csv')
-    
-    def __readCsv(self, givenCsvFilePath, hasHeader = False):
-        resultList = []
-        with open(givenCsvFilePath) as f:
-            reader = csv.reader(f) 
-            if hasHeader == True:
-                headerList = [column.strip() for column in str(next(reader)).split(' ')]
-            for row in reader: # read file line by line.
-                resultList.append(row)
-        return resultList
 
     def __initSeriesUid(self, givenFilePathOfUid):
-        seriesUidList = self.__readCsv(givenCsvFilePath=givenFilePathOfUid) # load every patient's ID.
+        seriesUidList = CsvFile(givenFilePath=givenFilePathOfUid, hasHeader=False).getRecords() # load every patient's ID.
         return seriesUidList
 
     def __initCandidateNodules(self, givenFilePathOfCandidateNodules):
@@ -62,7 +95,7 @@ class Luna16(object):
         1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860,-16.14,-248.61,-239.55,0
         1.3.6.1.4.1.14519.5.2.1.6279.6001.100225287222365663678666836860,135.89,-141.41,-252.2,0
         """
-        candidateNoduleList = self.__readCsv(givenCsvFilePath=givenFilePathOfCandidateNodules, hasHeader=True)
+        candidateNoduleList = CsvFile(givenFilePath=givenFilePathOfCandidateNodules, hasHeader=True).getRecords()
         return candidateNoduleList
     
     def __initAnnotation(self, givenFilePathOfAnnotation):
@@ -79,7 +112,7 @@ class Luna16(object):
         1.3.6.1.4.1.14519.5.2.1.6279.6001.100953483028192176989979435275,81.50964574,54.9572186,-150.3464233,10.36232088
         1.3.6.1.4.1.14519.5.2.1.6279.6001.102681962408431413578140925249,105.0557924,19.82526014,-91.24725078,21.08961863
         """
-        annotationList = self.__readCsv(givenCsvFilePath=givenFilePathOfAnnotation, hasHeader=True)
+        annotationList = CsvFile(givenFilePath=givenFilePathOfAnnotation, hasHeader=True).getRecords()
         return annotationList
 
     def getSeriesIds(self):
@@ -100,26 +133,104 @@ class Luna16(object):
         sliceOfCtScan = Slice(givenCtScan=givenCtScan, givenSliceId=givenSliceId)
         return sliceOfCtScan
 
-    def extractCandidateOfNodule(self, givenCtScan, givenWorldCoord):
+    def extractCandidateOfNodule(self, givenCtScan, givenWorldCoord, givenClassLabel = '0'): # '0' means not a real nodule, and '1' means a real nodule
         assert(isinstance(givenCtScan, CtScan))
         assert(isinstance(givenWorldCoord, WorldCoord))
-        candidateOfNodule = Nodule(givenCtScan=givenCtScan, givenWorldCoordOfNodule=givenWorldCoord)
+        candidateOfNodule = NoduleCandidate(givenCtScan=givenCtScan, givenWorldCoordOfNodule=givenWorldCoord, givenClassLabel=givenClassLabel)
         return candidateOfNodule
     
     def extractCollectionOfCandidateOfNodule(self, givenMaxNumber = 100):
-        candidateList = []
+        if givenMaxNumber == 'infty':
+            givenMaxNumber = len(self.getCandidateNodules())
+        noduleList, otherList = [], []
         candidateOfNodules = self.getCandidateNodules()
         for candidateIndex, candidate in enumerate(candidateOfNodules[0:givenMaxNumber]):
+            print('handle candidate: ' + str(candidateIndex))
             ctScan = self.extractCtScan(givenSeriesId=candidate[0])
             worldCoord = WorldCoord(givenX=float(candidate[1]), givenY=float(candidate[2]), givenZ=float(candidate[3])) 
-            nodule = self.extractCandidateOfNodule(givenCtScan=ctScan, givenWorldCoord=worldCoord)
-            candidateList.append(nodule)
-        return candidateList
+            nodule = self.extractCandidateOfNodule(givenCtScan=ctScan, givenWorldCoord=worldCoord, givenClassLabel = candidate[4])
+            if candidate[4] == '1':
+                noduleList.append(nodule)
+                continue
+            if candidate[4] == '0':
+                otherList.append(nodule)
+        return noduleList, otherList
+   
+    def allocateCandidateOfNoduleBasedOnDataFederation(self, givenDataFederation, givenMaxNumber = 'infty'):
+        assert(isinstance(givenDataFederation, DataFederation))
+        if givenMaxNumber == 'infty':
+            self.prepareDataFederationByNpy(givenDataFederation=givenDataFederation, givenMaxNumber=len(self.__candidateNodules))
+            return 
+        if givenMaxNumber <= 200:
+            self.prepareDataFederationByFiles(givenDataFederation=givenDataFederation, givenMaxNumber=givenMaxNumber)
+            return 
+        if givenMaxNumber > 200:
+            self.prepareDataFederationByNpy(givenDataFederation=givenDataFederation, givenMaxNumber=givenMaxNumber)
+    
+    def prepareDataFederationByFiles(self, givenDataFederation, givenMaxNumber):
+        assert(isinstance(givenDataFederation, DataFederation))
+        noduleList, otherList = self.extractCollectionOfCandidateOfNodule(givenMaxNumber = givenMaxNumber)
+        numberOfClients, configs = givenDataFederation.getNumberOfClients(), givenDataFederation.getConfigSettings()
+        idBeginIndexOfClass0, idBeginIndexOfClass1 = 0, 0
+        for iclient in range(numberOfClients):
+            print('ready to save data of client: ' + str(iclient))
+            numberOfSampleOfClass0, numberOfSampleOfClass1 = int(float(configs[iclient][1])*len(otherList)), int(float(configs[iclient][2])*len(noduleList))
+            idsOfSamplesOfClass0 = range(idBeginIndexOfClass0, min(idBeginIndexOfClass0+numberOfSampleOfClass0, len(otherList))) # class 0
+            idsOfSamplesOfClass1 = range(idBeginIndexOfClass1, min(idBeginIndexOfClass1+numberOfSampleOfClass1, len(noduleList))) # class 1
+            class0List, class1List = [otherList[i] for i in idsOfSamplesOfClass0], [noduleList[i] for i in idsOfSamplesOfClass1]
+            for samplei in class0List+class1List:
+                samplei.save(givenTargetDir = givenDataFederation.getDataFederationDir() + '/client' + str(iclient), givenType = 'jpg')
+            idBeginIndexOfClass0, idBeginIndexOfClass1 = min(idBeginIndexOfClass0+numberOfSampleOfClass0, len(otherList)-1), min(idBeginIndexOfClass1+numberOfSampleOfClass1, len(noduleList)-1)
 
-    def saveCandidateOfNodule(self, givenTargetPath, givenNoduleList):
-        for nodule in givenNoduleList:
-            assert(isinstance(nodule, Nodule))
-            nodule.save(givenTargetPath=givenTargetPath)
+    def prepareDataFederationByNpy(self, givenDataFederation, givenMaxNumber):
+        assert(isinstance(givenDataFederation, DataFederation))
+        noduleList, otherList = self.extractCollectionOfCandidateOfNodule(givenMaxNumber = givenMaxNumber)
+        numberOfClients, configs = givenDataFederation.getNumberOfClients(), givenDataFederation.getConfigSettings()
+        idBeginIndexOfClass0, idBeginIndexOfClass1 = 0, 0
+        for iclient in range(numberOfClients):
+            print('ready to save data of client: ' + str(iclient))
+            numberOfSampleOfClass0, numberOfSampleOfClass1 = int(float(configs[iclient][1])*len(otherList)), int(float(configs[iclient][2])*len(noduleList))
+            idsOfSamplesOfClass0 = range(idBeginIndexOfClass0, min(idBeginIndexOfClass0+numberOfSampleOfClass0, len(otherList))) # class 0
+            idsOfSamplesOfClass1 = range(idBeginIndexOfClass1, min(idBeginIndexOfClass1+numberOfSampleOfClass1, len(noduleList))) # class 1
+            class0Array, class1Array = np.array([otherList[i] for i in idsOfSamplesOfClass0]), np.array([noduleList[i] for i in idsOfSamplesOfClass1])
+            NpyFile(givenFilePath=givenDataFederation.getDataFederationDir() + '/client' + str(iclient) + '/' + 'class0.npy').write(givenNumpyArray=class0Array)
+            NpyFile(givenFilePath=givenDataFederation.getDataFederationDir() + '/client' + str(iclient) + '/' + 'class1.npy').write(givenNumpyArray=class1Array)
+            idBeginIndexOfClass0, idBeginIndexOfClass1 = min(idBeginIndexOfClass0+numberOfSampleOfClass0, len(otherList)-1), min(idBeginIndexOfClass1+numberOfSampleOfClass1, len(noduleList)-1)
+    pass
+
+class DataFederation(object):
+    """
+    prepare data federation, like:
+    Client id	Class 0	Class 1
+    0	        0.1	    0.6
+    1	        0.3	    0.3
+    2	        0.6	    0.1
+    """
+    def __init__(self, givenConfigPath, givenDataFederationDir):
+        self.__configRecords = CsvFile(givenFilePath=givenConfigPath, hasHeader=True).getRecords()
+        self.__numOfClients = len(self.__configRecords)
+        self.__dataFederationDir = givenDataFederationDir
+        self.__configPath = givenConfigPath
+        self.__checkDataFederationSetting()
+        pass
+
+    def getConfigSettings(self):
+        return self.__configRecords
+
+    def getNumberOfClients(self):
+        return self.__numOfClients
+
+    def getDataFederationDir(self):
+        return self.__dataFederationDir
+
+    def getConfigPath(self):
+        return self.__configPath
+
+    def __checkDataFederationSetting(self):
+        for clientId in range(self.__numOfClients):
+            dataDirOfClient = self.__dataFederationDir + '/client' + str(clientId)
+            if os.path.exists(dataDirOfClient) == False:
+                os.makedirs(dataDirOfClient)
     pass
 
 class WorldCoord(object):
@@ -195,14 +306,21 @@ class IdGenerator(object):
         return str(self.__idNumber)
     pass
 
-class Nodule(object):
-    def __init__(self, givenCtScan, givenWorldCoordOfNodule):
+class NoduleCandidate(object):
+    def __init__(self, givenCtScan, givenWorldCoordOfNodule, givenClassLabel):
         assert(isinstance(givenCtScan, CtScan))
+        self.__classLabel = self.__initLabel(givenClassLabel)
         self.__settingObj = SettingAboutNodule(givenWorldCoordOfNodule=givenWorldCoordOfNodule)
         self.__voxelCoord = VoxelCoord(givenWorldCoord=self.__settingObj.getWorldCoord(), givenOriginCoord=givenCtScan.getSetting().getOriginCoord(), givenSpacing=givenCtScan.getSetting().getSpacing())
         self.__sliceImg = givenCtScan.extractSliceByCoord(givenWorldCoord=givenWorldCoordOfNodule)
         self.__img = self.__initData()
     
+    def __initLabel(self, givenClassLabel):
+        if givenClassLabel == '1':
+            return 'class1-'
+        if givenClassLabel == '0':
+            return 'class0-'
+
     def getVoxelCoord(self):
         return self.__voxelCoord
 
@@ -230,7 +348,7 @@ class Nodule(object):
         plt.show()
 
     def save(self, givenTargetDir, givenType = 'nii'):
-        targetPath = givenTargetDir + '/' + IdGenerator().get() + '.' + givenType
+        targetPath = givenTargetDir + '/' + self.__classLabel + IdGenerator().get() + '.' + givenType
         if givenType == 'nii':
             new_img = nib.nifti1.Nifti1Image(self.__img, None, header=None)
             nib.save(new_img, targetPath)
@@ -355,15 +473,13 @@ class Test(object):
     def __init__(self):
         pass
     
-    def execute(self):
+    def testLuna16AllocateCandidateOfNoduleBasedOnDataFederation(self):
         luna16 = Luna16(givenDir='/home/yawei/Documents/LUNA16')
-        candidateList = luna16.extractCollectionOfCandidateOfNodule(givenMaxNumber=10)
-        for candidateNodule in candidateList:
-            candidateNodule.save(givenTargetDir='/home/yawei/Documents/LUNA16/candidateOfnodules', givenType='jpeg')
-        pass
+        df = DataFederation(givenConfigPath='/home/yawei/Documents/FLBenchmark-toolkit/medicalDataHandler/handlePublicDatasets/luna16/dataFederationConfig.csv', givenDataFederationDir='/home/yawei/Documents/LUNA16/candidateOfnodules')
+        luna16.allocateCandidateOfNoduleBasedOnDataFederation(givenDataFederation=df, givenMaxNumber=100)
     pass
 
-Test().execute()
+Test().testLuna16AllocateCandidateOfNoduleBasedOnDataFederation()
 
 
 
