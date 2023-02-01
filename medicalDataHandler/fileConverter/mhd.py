@@ -58,13 +58,13 @@ class MhdUnit(object):
 
 class Test(object):
     def execute(self):
-        mhdo = MhdUnit(givenMhdFilePath="/home/yawei/my-flbenchmark/toyData/mhd/1.3.6.1.4.1.14519.5.2.1.6279.6001.102681962408431413578140925249.mhd")
+        mhdo = MhdUnit(givenMhdFilePath="/home/yawei/Documents/LUNA16/rawData/1.3.6.1.4.1.14519.5.2.1.6279.6001.102681962408431413578140925249.mhd")
         # convert to a nii.gz 
-        mhdo.save(givenTargetDir="/home/yawei/my-flbenchmark/toyData/mhd2nii/", givenTargetType="nii")
+        #mhdo.save(givenTargetDir="/home/yawei/my-flbenchmark/toyData/mhd2nii/", givenTargetType="nii")
         # show 1 slice
-        mhdo.showSlice(givenSliceId=(10,None, None))
+        mhdo.showSlice(givenSliceId=(15,None, None))
         
-#Test().execute()
+Test().execute()
 
 
 

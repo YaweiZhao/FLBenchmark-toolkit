@@ -140,22 +140,45 @@ class Luna16(object):
         return candidateOfNodule
     
     def extractCollectionOfCandidateOfNodule(self, givenMaxNumber = 100):
+        """
+        givenMaxNumber can choose an integer like 100, or 'infty'.
+        """
         if givenMaxNumber == 'infty':
             givenMaxNumber = len(self.getCandidateNodules())
         noduleList, otherList = [], []
         candidateOfNodules = self.getCandidateNodules()
         for candidateIndex, candidate in enumerate(candidateOfNodules[0:givenMaxNumber]):
-            print('handle candidate: ' + str(candidateIndex))
-            ctScan = self.extractCtScan(givenSeriesId=candidate[0])
-            worldCoord = WorldCoord(givenX=float(candidate[1]), givenY=float(candidate[2]), givenZ=float(candidate[3])) 
-            nodule = self.extractCandidateOfNodule(givenCtScan=ctScan, givenWorldCoord=worldCoord, givenClassLabel = candidate[4])
+            nodule = self.__generateCandidateOfNodule(givenCandidateSettingRecord = candidate)
             if candidate[4] == '1':
                 noduleList.append(nodule)
                 continue
             if candidate[4] == '0':
                 otherList.append(nodule)
         return noduleList, otherList
-   
+    
+    def __generateCandidateOfNodule(self, givenCandidateSettingRecord):
+        assert(isinstance(givenCandidateSettingRecord, list))
+        ctScan = self.extractCtScan(givenSeriesId=givenCandidateSettingRecord[0])
+        worldCoord = WorldCoord(givenX=float(givenCandidateSettingRecord[1]), givenY=float(givenCandidateSettingRecord[2]), givenZ=float(givenCandidateSettingRecord[3])) 
+        nodule = self.extractCandidateOfNodule(givenCtScan=ctScan, givenWorldCoord=worldCoord, givenClassLabel = givenCandidateSettingRecord[4])
+        return nodule
+
+    def extractUnbalancedCollectionOfCandidateOfNodule(self, givenUnbalancedSetting):
+        assert(isinstance(givenUnbalancedSetting, UnbalanceSetting))
+        noduleList, otherList = [], []
+        candidateOfNodules = self.getCandidateNodules()
+        for candidateIndex, candidate in enumerate(candidateOfNodules):
+            if np.mod(candidateIndex, 10000) == 0:
+                print(candidateIndex)
+            if candidate[4] == '1' and len(noduleList) < givenUnbalancedSetting.getNumOfClass1Samples():
+                nodule = self.__generateCandidateOfNodule(givenCandidateSettingRecord = candidate)
+                noduleList.append(nodule)
+                continue
+            if candidate[4] == '0' and len(otherList) < givenUnbalancedSetting.getNumOfClass0Samples():
+                nodule = self.__generateCandidateOfNodule(givenCandidateSettingRecord = candidate)
+                otherList.append(nodule)
+        return noduleList, otherList
+
     def allocateCandidateOfNoduleBasedOnDataFederation(self, givenDataFederation, givenMaxNumber = 'infty'):
         assert(isinstance(givenDataFederation, DataFederation))
         if givenMaxNumber == 'infty':
@@ -196,6 +219,38 @@ class Luna16(object):
             NpyFile(givenFilePath=givenDataFederation.getDataFederationDir() + '/client' + str(iclient) + '/' + 'class0.npy').write(givenNumpyArray=class0Array)
             NpyFile(givenFilePath=givenDataFederation.getDataFederationDir() + '/client' + str(iclient) + '/' + 'class1.npy').write(givenNumpyArray=class1Array)
             idBeginIndexOfClass0, idBeginIndexOfClass1 = min(idBeginIndexOfClass0+numberOfSampleOfClass0, len(otherList)-1), min(idBeginIndexOfClass1+numberOfSampleOfClass1, len(noduleList)-1)
+    
+    def prepareUnbalancedDataFederation(self, givenDataFederation, givenUnbalanceSetting):
+        assert(isinstance(givenDataFederation, DataFederation))
+        assert(isinstance(givenUnbalanceSetting, UnbalanceSetting))
+        noduleList, otherList = self.extractUnbalancedCollectionOfCandidateOfNodule(givenUnbalancedSetting=givenUnbalanceSetting)
+        nodulesForFederation, othersForFederation = noduleList[0:givenUnbalanceSetting.getNumOfClass1Samples()], otherList[0:givenUnbalanceSetting.getNumOfClass0Samples()]
+        numberOfClients, configs = givenDataFederation.getNumberOfClients(), givenDataFederation.getConfigSettings()
+        idBeginIndexOfClass0, idBeginIndexOfClass1 = 0, 0
+        for iclient in range(numberOfClients):
+            print('ready to save data of client: ' + str(iclient))
+            numberOfSampleOfClass0, numberOfSampleOfClass1 = int(float(configs[iclient][1])*len(othersForFederation)), int(float(configs[iclient][2])*len(nodulesForFederation))
+            idsOfSamplesOfClass0 = range(idBeginIndexOfClass0, min(idBeginIndexOfClass0+numberOfSampleOfClass0, len(othersForFederation))) # class 0
+            idsOfSamplesOfClass1 = range(idBeginIndexOfClass1, min(idBeginIndexOfClass1+numberOfSampleOfClass1, len(nodulesForFederation))) # class 1
+            class0List, class1List = [othersForFederation[i] for i in idsOfSamplesOfClass0], [nodulesForFederation[i] for i in idsOfSamplesOfClass1]
+            for samplei in class0List+class1List:
+                samplei.save(givenTargetDir = givenDataFederation.getDataFederationDir() + '/client' + str(iclient), givenType = 'jpg')
+            idBeginIndexOfClass0, idBeginIndexOfClass1 = min(idBeginIndexOfClass0+numberOfSampleOfClass0, len(othersForFederation)-1), min(idBeginIndexOfClass1+numberOfSampleOfClass1, len(nodulesForFederation)-1)
+    
+    def allocateCandidateOfNoduleBasedOnUnbalanceDataFederation(self, givenDataFederation, givenUnbalanceSetting):
+        self.prepareUnbalancedDataFederation(givenDataFederation=givenDataFederation, givenUnbalanceSetting=givenUnbalanceSetting)
+    pass
+
+class UnbalanceSetting(object):
+    def __init__(self, givenClass0Size = 100, givenClass1Size = 100):
+        self.__numberOfClass0Samples = givenClass0Size
+        self.__numberOfClass1Samples = givenClass1Size
+    
+    def getNumOfClass1Samples(self):
+        return self.__numberOfClass1Samples
+
+    def getNumOfClass0Samples(self):
+        return self.__numberOfClass0Samples
     pass
 
 class DataFederation(object):
@@ -209,6 +264,7 @@ class DataFederation(object):
     def __init__(self, givenConfigPath, givenDataFederationDir):
         self.__configRecords = CsvFile(givenFilePath=givenConfigPath, hasHeader=True).getRecords()
         self.__numOfClients = len(self.__configRecords)
+        self.__numOfClass = len(self.__configRecords[0])-1
         self.__dataFederationDir = givenDataFederationDir
         self.__configPath = givenConfigPath
         self.__checkDataFederationSetting()
@@ -226,11 +282,18 @@ class DataFederation(object):
     def getConfigPath(self):
         return self.__configPath
 
+    def getNumberOfClass(self):
+        return self.__numOfClass
+
     def __checkDataFederationSetting(self):
         for clientId in range(self.__numOfClients):
             dataDirOfClient = self.__dataFederationDir + '/client' + str(clientId)
             if os.path.exists(dataDirOfClient) == False:
                 os.makedirs(dataDirOfClient)
+            for classId in range(self.__numOfClass):
+                dataDirOfClass = dataDirOfClient + '/' + str(classId)
+                if os.path.exists(dataDirOfClass) == False:
+                    os.makedirs(dataDirOfClass)
     pass
 
 class WorldCoord(object):
@@ -317,9 +380,9 @@ class NoduleCandidate(object):
     
     def __initLabel(self, givenClassLabel):
         if givenClassLabel == '1':
-            return 'class1-'
+            return '1' #'class1-'
         if givenClassLabel == '0':
-            return 'class0-'
+            return '0' #'class0-'
 
     def getVoxelCoord(self):
         return self.__voxelCoord
@@ -348,7 +411,7 @@ class NoduleCandidate(object):
         plt.show()
 
     def save(self, givenTargetDir, givenType = 'nii'):
-        targetPath = givenTargetDir + '/' + self.__classLabel + IdGenerator().get() + '.' + givenType
+        targetPath = givenTargetDir + '/' + self.__classLabel + '/' + IdGenerator().get() + '.' + givenType
         if givenType == 'nii':
             new_img = nib.nifti1.Nifti1Image(self.__img, None, header=None)
             nib.save(new_img, targetPath)
@@ -469,17 +532,23 @@ class CtScan(object):
     pass
 
 
+
 class Test(object):
     def __init__(self):
         pass
     
     def testLuna16AllocateCandidateOfNoduleBasedOnDataFederation(self):
         luna16 = Luna16(givenDir='/home/yawei/Documents/LUNA16')
-        df = DataFederation(givenConfigPath='/home/yawei/Documents/FLBenchmark-toolkit/medicalDataHandler/handlePublicDatasets/luna16/dataFederationConfig.csv', givenDataFederationDir='/home/yawei/Documents/LUNA16/candidateOfnodules')
+        df = DataFederation(givenConfigPath='/home/yawei/Documents/LUNA16/candidateOfnodules/dataFederationConfig.csv', givenDataFederationDir='/home/yawei/Documents/LUNA16/candidateOfnodules')
         luna16.allocateCandidateOfNoduleBasedOnDataFederation(givenDataFederation=df, givenMaxNumber=100)
+    
+    def testLuna16AllocateCandidateOfNoduleBasedOnUnbalanceDataFederation(self):
+        luna16 = Luna16(givenDir='/home/yawei/Documents/LUNA16')
+        df = DataFederation(givenConfigPath='/home/yawei/Documents/LUNA16/candidateOfnodules/dataFederationConfig.csv', givenDataFederationDir='/home/yawei/Documents/LUNA16/candidateOfnodules')
+        luna16.allocateCandidateOfNoduleBasedOnUnbalanceDataFederation(givenDataFederation=df, givenUnbalanceSetting=UnbalanceSetting(givenClass0Size=1100, givenClass1Size=1100))
     pass
 
-Test().testLuna16AllocateCandidateOfNoduleBasedOnDataFederation()
+Test().testLuna16AllocateCandidateOfNoduleBasedOnUnbalanceDataFederation()
 
 
 
