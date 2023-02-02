@@ -1,4 +1,4 @@
-import os
+import os, shutil
 import csv
 import numpy as np
 import time
@@ -219,7 +219,7 @@ class Luna16(object):
             NpyFile(givenFilePath=givenDataFederation.getDataFederationDir() + '/client' + str(iclient) + '/' + 'class0.npy').write(givenNumpyArray=class0Array)
             NpyFile(givenFilePath=givenDataFederation.getDataFederationDir() + '/client' + str(iclient) + '/' + 'class1.npy').write(givenNumpyArray=class1Array)
             idBeginIndexOfClass0, idBeginIndexOfClass1 = min(idBeginIndexOfClass0+numberOfSampleOfClass0, len(otherList)-1), min(idBeginIndexOfClass1+numberOfSampleOfClass1, len(noduleList)-1)
-    
+
     def prepareUnbalancedDataFederation(self, givenDataFederation, givenUnbalanceSetting):
         assert(isinstance(givenDataFederation, DataFederation))
         assert(isinstance(givenUnbalanceSetting, UnbalanceSetting))
@@ -232,8 +232,8 @@ class Luna16(object):
             numberOfSampleOfClass0, numberOfSampleOfClass1 = int(float(configs[iclient][1])*len(othersForFederation)), int(float(configs[iclient][2])*len(nodulesForFederation))
             idsOfSamplesOfClass0 = range(idBeginIndexOfClass0, min(idBeginIndexOfClass0+numberOfSampleOfClass0, len(othersForFederation))) # class 0
             idsOfSamplesOfClass1 = range(idBeginIndexOfClass1, min(idBeginIndexOfClass1+numberOfSampleOfClass1, len(nodulesForFederation))) # class 1
-            class0List, class1List = [othersForFederation[i] for i in idsOfSamplesOfClass0], [nodulesForFederation[i] for i in idsOfSamplesOfClass1]
-            for samplei in class0List+class1List:
+            candidatesOfClienti =  [othersForFederation[i] for i in idsOfSamplesOfClass0] + [nodulesForFederation[i] for i in idsOfSamplesOfClass1]
+            for indexOfSample, samplei in enumerate(candidatesOfClienti):
                 samplei.save(givenTargetDir = givenDataFederation.getDataFederationDir() + '/client' + str(iclient), givenType = 'jpg')
             idBeginIndexOfClass0, idBeginIndexOfClass1 = min(idBeginIndexOfClass0+numberOfSampleOfClass0, len(othersForFederation)-1), min(idBeginIndexOfClass1+numberOfSampleOfClass1, len(nodulesForFederation)-1)
     
@@ -284,8 +284,17 @@ class DataFederation(object):
 
     def getNumberOfClass(self):
         return self.__numOfClass
+    
+    def clear(self):
+        dirs = os.listdir(self.__dataFederationDir)
+        for dir in dirs:
+            path = os.path.join(self.__dataFederationDir,dir)
+            if os.path.isdir(path) == True:
+                shutil.rmtree(path)
+        pass
 
     def __checkDataFederationSetting(self):
+        self.clear()
         for clientId in range(self.__numOfClients):
             dataDirOfClient = self.__dataFederationDir + '/client' + str(clientId)
             if os.path.exists(dataDirOfClient) == False:
@@ -294,6 +303,7 @@ class DataFederation(object):
                 dataDirOfClass = dataDirOfClient + '/' + str(classId)
                 if os.path.exists(dataDirOfClass) == False:
                     os.makedirs(dataDirOfClass)
+        pass
     pass
 
 class WorldCoord(object):
@@ -348,7 +358,7 @@ class SettingAboutSlice(object):
 class SettingAboutNodule(object):
     def __init__(self, givenWorldCoordOfNodule):
         self.__worldCoord = givenWorldCoordOfNodule
-        self.__radiusOfBox = 40
+        self.__radiusOfBox = 30
         self.__pad = 2
 
     def getWorldCoord(self):
@@ -372,11 +382,11 @@ class IdGenerator(object):
 class NoduleCandidate(object):
     def __init__(self, givenCtScan, givenWorldCoordOfNodule, givenClassLabel):
         assert(isinstance(givenCtScan, CtScan))
+        self.__ctScanPath = givenCtScan.getPath()
+        self.__worldCoord = givenWorldCoordOfNodule
         self.__classLabel = self.__initLabel(givenClassLabel)
-        self.__settingObj = SettingAboutNodule(givenWorldCoordOfNodule=givenWorldCoordOfNodule)
+        self.__settingObj = SettingAboutNodule(givenWorldCoordOfNodule=self.__worldCoord)
         self.__voxelCoord = VoxelCoord(givenWorldCoord=self.__settingObj.getWorldCoord(), givenOriginCoord=givenCtScan.getSetting().getOriginCoord(), givenSpacing=givenCtScan.getSetting().getSpacing())
-        self.__sliceImg = givenCtScan.extractSliceByCoord(givenWorldCoord=givenWorldCoordOfNodule)
-        self.__img = self.__initData()
     
     def __initLabel(self, givenClassLabel):
         if givenClassLabel == '1':
@@ -386,38 +396,46 @@ class NoduleCandidate(object):
 
     def getVoxelCoord(self):
         return self.__voxelCoord
-
-    def __initData(self):
-        x,y,z = self.__voxelCoord.get() # 注意 y代表纵轴，x代表横轴
-        noduleImg = self.__sliceImg[max(0, y - self.__settingObj.getRadiusOfBox()):min(self.__sliceImg.shape[0], y + self.__settingObj.getRadiusOfBox()),
-                                    max(0, x - self.__settingObj.getRadiusOfBox()):min(self.__sliceImg.shape[1], x + self.__settingObj.getRadiusOfBox())]
-        return noduleImg
     
-    def highlight2DByBox(self): 
+    def __extractSlice(self):
+        ctScan = CtScan(givenFilePath=self.__ctScanPath)
+        sliceImg = ctScan.extractSliceByCoord(givenWorldCoord=self.__worldCoord)
+        return sliceImg
+
+    def getImg(self):
+        sliceImg = self.__extractSlice()
         x,y,z = self.__voxelCoord.get() # 注意 y代表纵轴，x代表横轴
-        self.__sliceImg[max(0, y - self.__settingObj.getRadiusOfBox()):min(self.__sliceImg.shape[0], y + self.__settingObj.getRadiusOfBox()),
+        noduleImg = sliceImg[max(0, y - self.__settingObj.getRadiusOfBox()):min(sliceImg.shape[0], y + self.__settingObj.getRadiusOfBox()),
+                                    max(0, x - self.__settingObj.getRadiusOfBox()):min(sliceImg.shape[1], x + self.__settingObj.getRadiusOfBox())]
+        return noduleImg
+
+    def highlight2DByBox(self): 
+        sliceImg = self.__extractSlice()
+        x,y,z = self.__voxelCoord.get() # 注意 y代表纵轴，x代表横轴
+        sliceImg[max(0, y - self.__settingObj.getRadiusOfBox()):min(sliceImg.shape[0], y + self.__settingObj.getRadiusOfBox()),
                         max(0, x - self.__settingObj.getRadiusOfBox() - self.__settingObj.getPad()):max(0, x - self.__settingObj.getRadiusOfBox())] = 3000 # 竖线
 
-        self.__sliceImg[max(0, y - self.__settingObj.getRadiusOfBox()):min(self.__sliceImg.shape[0], y + self.__settingObj.getRadiusOfBox()),
-                        min(self.__sliceImg.shape[1], x + self.__settingObj.getRadiusOfBox()):min(self.__sliceImg.shape[1], x + self.__settingObj.getRadiusOfBox() + self.__settingObj.getPad())] = 3000 # 竖线
+        sliceImg[max(0, y - self.__settingObj.getRadiusOfBox()):min(sliceImg.shape[0], y + self.__settingObj.getRadiusOfBox()),
+                        min(sliceImg.shape[1], x + self.__settingObj.getRadiusOfBox()):min(sliceImg.shape[1], x + self.__settingObj.getRadiusOfBox() + self.__settingObj.getPad())] = 3000 # 竖线
 
-        self.__sliceImg[max(0, y - self.__settingObj.getRadiusOfBox() - self.__settingObj.getPad()):max(0, y - self.__settingObj.getRadiusOfBox()),
-                        max(0, x - self.__settingObj.getRadiusOfBox()):min(self.__sliceImg.shape[1], x + self.__settingObj.getRadiusOfBox())] = 3000 # 横线
+        sliceImg[max(0, y - self.__settingObj.getRadiusOfBox() - self.__settingObj.getPad()):max(0, y - self.__settingObj.getRadiusOfBox()),
+                        max(0, x - self.__settingObj.getRadiusOfBox()):min(sliceImg.shape[1], x + self.__settingObj.getRadiusOfBox())] = 3000 # 横线
 
-        self.__sliceImg[min(self.__sliceImg.shape[0], y + self.__settingObj.getRadiusOfBox()):min(self.__sliceImg.shape[0], y + self.__settingObj.getRadiusOfBox() + self.__settingObj.getPad()),
-                        max(0, x - self.__settingObj.getRadiusOfBox()):min(self.__sliceImg.shape[1], x + self.__settingObj.getRadiusOfBox())] = 3000 # 横线
+        sliceImg[min(sliceImg.shape[0], y + self.__settingObj.getRadiusOfBox()):min(sliceImg.shape[0], y + self.__settingObj.getRadiusOfBox() + self.__settingObj.getPad()),
+                        max(0, x - self.__settingObj.getRadiusOfBox()):min(sliceImg.shape[1], x + self.__settingObj.getRadiusOfBox())] = 3000 # 横线
         plt.figure(1)
-        plt.imshow(self.__sliceImg, cmap='gray')
+        plt.imshow(sliceImg, cmap='gray')
         plt.show()
 
     def save(self, givenTargetDir, givenType = 'nii'):
         targetPath = givenTargetDir + '/' + self.__classLabel + '/' + IdGenerator().get() + '.' + givenType
+        img = self.getImg()
         if givenType == 'nii':
-            new_img = nib.nifti1.Nifti1Image(self.__img, None, header=None)
+            new_img = nib.nifti1.Nifti1Image(img, None, header=None)
             nib.save(new_img, targetPath)
         if givenType == 'jpeg' or givenType == 'jpg':
             plt.figure(1)
-            plt.imshow(self.__img, cmap='gray')
+            plt.imshow(img, cmap='gray')
             plt.axis('off')
             plt.savefig(targetPath)
         pass
@@ -493,6 +511,7 @@ class Slice(object):
 
 class CtScan(object):
     def __init__(self, givenFilePath):
+        self.__filePath = givenFilePath
         self.__itkimage = sitk.ReadImage(givenFilePath)
         self.__numpyImage = sitk.GetArrayFromImage(self.__itkimage)
         self.__settingObj = SettingAboutCtScan(givenFilePath=givenFilePath)
@@ -529,6 +548,9 @@ class CtScan(object):
 
     def getData(self):
         return self.__numpyImage
+
+    def getPath(self):
+        return self.__filePath
     pass
 
 
@@ -545,7 +567,14 @@ class Test(object):
     def testLuna16AllocateCandidateOfNoduleBasedOnUnbalanceDataFederation(self):
         luna16 = Luna16(givenDir='/home/yawei/Documents/LUNA16')
         df = DataFederation(givenConfigPath='/home/yawei/Documents/LUNA16/candidateOfnodules/dataFederationConfig.csv', givenDataFederationDir='/home/yawei/Documents/LUNA16/candidateOfnodules')
-        luna16.allocateCandidateOfNoduleBasedOnUnbalanceDataFederation(givenDataFederation=df, givenUnbalanceSetting=UnbalanceSetting(givenClass0Size=1100, givenClass1Size=1100))
+        luna16.allocateCandidateOfNoduleBasedOnUnbalanceDataFederation(givenDataFederation=df, givenUnbalanceSetting=UnbalanceSetting(givenClass0Size=500, givenClass1Size=500))
+        
+
+    def testLuna16NoduleHighlighBox(self):
+        ctScan = CtScan(givenFilePath='/home/yawei/Documents/LUNA16/rawData/1.3.6.1.4.1.14519.5.2.1.6279.6001.119304665257760307862874140576.mhd')
+        wc = WorldCoord(givenX=-114.849876257,	givenY = 153.690289006, givenZ=-689.672451967)
+        nodule = NoduleCandidate(givenCtScan=ctScan, givenWorldCoordOfNodule=wc, givenClassLabel='1')
+        nodule.highlight2DByBox()
     pass
 
 Test().testLuna16AllocateCandidateOfNoduleBasedOnUnbalanceDataFederation()
